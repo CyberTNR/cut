@@ -1,0 +1,685 @@
+###############################################################
+# © 2012-2013 Created by John Katsaros at the University of 
+# Sussex for use in The Dark Energy Survey and X-Ray Cluster
+# Survey.
+# More info on my research at Fermilab's Redmine (private). 
+#
+# For astLib-like conversions, all rights and © go
+# to Mark Hilton at astlib.sourceforge.net.
+# It's a great collection of python modules, it has
+# helped me immesurably for my research at Sussex.
+#
+# All of this code was written by me, except the
+# last information function, which was a
+# beautiful add by Lizi S. :D Cheers Lizi!  
+# Lizi also gave wonderful feedback, so cheers again!
+#  
+# 1. This is the STABLE version.
+#
+# 2. For test versions, multithreading and Cythonization tips
+#  give me a poke at my e-mail.
+# 
+# I am not claiming rights for code that other people wrote, 
+# it is OS anyway. 
+#
+# Note: This program doesn't do ANYTHING by itself: 
+# this is but one module from a collection of several
+# other modules that produce little jpg or png images 
+# from huge astronomical fits files, found in 
+# The Dark Energy Survey.
+#
+# 
+# Kudos to Tom for feedback! 
+###############################################################
+# @Feel free to use the code.
+###############################################################
+
+
+import pyfits as pyf
+import img_scale
+import numpy as np
+import pylab as pl
+import sys
+import pywcs as pwcs
+import os
+import re
+import glob
+
+####################################################
+# This is *NOT* from AstLib! This is a speciality function only # for use in the DES tiles. It doesn't do anything by itself.
+# Returns the width and length of a DES tile divided by float 
+# 2.
+# Note: Don't mess around with it AT ALL. For OS purposes
+# this is left open for edit. But don't edit unless you
+# know what you're doing.
+# The constants are derived from thorough statistical analysis 
+# of 500 DES fits files's headers. 
+# They all had the same exact dimensions.
+#####################################################
+
+#=======================MAXMINS CALC @ halves=====================
+
+def halves() :
+	delim = ':'
+	decmin_dms = '-56:02:28'
+	decmax_dms = '-55:17:30'
+	ramin_hms = '6:56:48'
+	ramax_hms = '7:02:06'
+
+	decmin_decimal = round(dms2decimal(decmin_dms,delim),5)
+	decmax_decimal = round(dms2decimal(decmax_dms,delim),5)
+	ramin_decimal = round(hms2decimal(ramin_hms,delim),5)
+	ramax_decimal = round(hms2decimal(ramax_hms,delim),5)
+
+	halfheight = round((decmax_decimal - decmin_decimal)/2.,5)
+	halfwidth = round((ramax_decimal - ramin_decimal)/2.,5)
+
+
+	return [halfwidth, halfheight,]
+
+
+#################################################
+# PLEASE CAREFUL!
+# The scripts below convert astronomical stuff around.
+# There are function descriptions detailing the 
+# various conversions.
+# These are NOT from astLib. They are edited for use
+# within DES, with several formats being VERY
+# different from astLib results. If you want 
+# original conversions, just get the astLib module at
+# sourceforge: http://astlib.sourceforge.net/
+##################################################
+
+
+def dec2hm(deg_decimal):
+	"""
+	Inputs:
+	         deg_decimal - decimal degrees
+	"""
+
+
+	hours_decimal = deg_decimal*24./360.  #Make it decimal hours
+
+	hours = hours_decimal
+
+#===========HOURS====================
+
+	if hours<10 and hours>=1:
+	        sHours="0"+str(hours)[0]
+	elif hours>=10:
+	        sHours=str(hours)[:2]
+	elif hours<1:
+	        sHours="00"
+
+#===============MINUTES---edited for DES careful!
+	if str(hours).find(".")==-1:
+        	mins=float(hours)*60.0
+	else:
+	        mins=float(str(hours)[str(hours).index("."):])*60.0
+	if mins<10 and mins>=1:         
+        	sMins="0"+str(mins)[:1]	 
+	elif mins>=10:
+        	sMins=str(mins)[:2]
+	elif mins<1:
+	        sMins="00"
+#==============END OF CONVERSION @ MINUTES=======\\
+	return sHours+sMins
+
+
+
+#================HOURS TO DECIMALS==================\\
+def hms2decimal(RAString, delimiter):
+    """Converts a delimited string of Hours:Minutes:Seconds format into decimal degrees. 
+    
+    @type RAString: string
+    @param RAString: coordinate string in H:M:S format
+    @type delimiter: string
+    @param delimiter: delimiter character in RAString
+    @rtype: float
+    @return: coordinate in decimal degrees
+    
+    """
+    
+    if delimiter=="":
+        RABits=str(RAString).split()
+    else:
+        RABits=str(RAString).split(delimiter)
+    if len(RABits)>1:
+        RAHDecimal=float(RABits[0])
+        if len(RABits)>1:
+            RAHDecimal=RAHDecimal+(float(RABits[1])/60.0)
+        if len(RABits)>2:
+            RAHDecimal=RAHDecimal+(float(RABits[2])/3600.0)
+        RADeg=(RAHDecimal/24.0)*360.0
+    else:
+        RADeg=float(RAString)
+
+    return RADeg
+
+#============================DEGREES:MINUTES;SECONDS TO DECIMAL===================\\
+def dms2decimal(decString, delimiter):
+    """Converts a delimited string of Degrees:Minutes:Seconds format into decimal degrees.
+    
+    @type decString: string
+    @param decString: coordinate string in D:M:S format
+    @type delimiter: string
+    @param delimiter: delimiter character in decString
+    @rtype: float
+    @return: coordinate in decimal degrees
+        
+    """
+    # is it in DD:MM:SS format?
+    if delimiter=="":
+        decBits=str(decString).split()
+    else:
+        decBits=str(decString).split(delimiter)
+    if len(decBits)>1:
+        decDeg=float(decBits[0])
+        if decBits[0].find("-")!=-1:
+            if len(decBits)>1:
+                decDeg=decDeg-(float(decBits[1])/60.0)
+            if len(decBits)>2:
+                decDeg=decDeg-(float(decBits[2])/3600.0)
+        else:
+            if len(decBits)>1:
+                decDeg=decDeg+(float(decBits[1])/60.0)
+            if len(decBits)>2:
+                decDeg=decDeg+(float(decBits[2])/3600.0)
+    else:
+        decDeg=float(decString)
+    
+    return decDeg
+
+
+#============================================+END COORDS+===============================\\
+
+##################################
+# This concludes the conversion part,
+# time for the fun part.
+##################################
+##################################
+# Takes .fits header and makes the code able to parse
+# astrometry data needed, e.g. the 2-D increment vectors
+# needed to jump from one of group of pixels forward.
+# *Keeps log file.
+##################################
+
+def cutout(filename,outfile,xc,yc,xxw,yyw):
+	"""
+	Inputs:
+	        file  - .fits filename or pyfits HDUList (must be 2D)
+	        xc,yc - x and y coordinates in the fits files' coordinate system
+	        xw,yw - x and y width
+	`        outfile - output file
+	"""
+	print 'Loading fits files and parsing astrometry data...'
+#===================OPEN FILE===================\\
+	InfoOutFile='Information'
+	if os.path.exists(outfile):
+		x=np.arange(1,250,1)
+		for i in x:
+			if os.path.exists(outfile+str(i)):
+				continue
+			else:
+				outfile=outfile+str(i) 
+				break
+	
+	fitsfile = pyf.open(filename)
+	head = fitsfile[0].header
+	data =  fitsfile[0].data
+	wcs = pwcs.WCS(head)
+#===============================================\\
+
+#========================GET PHYSICAL INCREMENT======================\\
+	cd1 = head.get('CDELT1') if head.get('CDELT1') else head.get('CD1_1')
+	cd2 = head.get('CDELT2') if head.get('CDELT2') else head.get('CD2_2')
+#====================================================================\\
+	xx,yy = wcs.wcs_sky2pix(xc,yc,0) #Convert coords from WCS to pixels
+	xw, yw = xxw, yyw	
+	#xw,yw = wcs.wcs_sky2pix(xxw,yyw,0)
+	
+	
+	
+#============DEFINE LIMITS AND NORMALIZE BOUNDARIES WITH INCREMENT=======\\
+	xmin,xmax = np.max([0,xx-xw/np.abs(cd1)]),np.min([head['NAXIS1'],xx+xw/np.abs(cd1)])
+
+	ymin,ymax = np.max([0,yy-yw/np.abs(cd2)]),np.min([head['NAXIS2'],yy+yw/np.abs(cd2)])
+#========================================================================================\\
+
+##############################
+# CONDITIONS FOR OUT OF THE IMAGE <- I do speak the England 
+# very best! It will make sense when you read the printf    
+# output.
+##############################
+
+	if xmax < 0 or ymax < 0:
+		print 'Max X Coordinate in %s is outside of image: %f,%f.' % (filename,xmax,ymax)
+		return 0,0
+		sys.exit()
+	if ymin >= head.get('NAXIS2') or xmin >= head.get('NAXIS1'):
+		print 'Min Coordinate in %s is outside of image: %f,%f.' % (filename,xmin,ymin)
+		return 0,0
+		sys.exit()
+
+#########################
+# Conditions end. Now starting constraining.
+#########################
+	
+#===============CONSTRAIN DATA FROM FITS=================================\\
+	img = fitsfile[0].data[ymin:ymax,xmin:xmax]
+
+#===========NEW HEADER===========
+	
+	xmin, ymin = wcs.wcs_pix2sky(xmin,ymin,0)
+	xmax, ymax = wcs.wcs_pix2sky(xmax,ymax,0)
+	head['CRVAL1']-= xmin[0]
+	head['CRVAL2']-= ymin[0]
+	head['NAXIS1']= int(xmin[0]-xmax[0])
+	head['NAXIS2']= int(ymax[0]-ymin[0])
+
+
+#===========================CREATE FILE==================================\\
+	newfile = pyf.PrimaryHDU(data=img,header=head)
+	newfile.writeto(outfile)
+	print 'Done.'
+	return newfile,1
+
+
+
+
+#==============================================+END OF CUTOUTFUNC=================================\\
+#==============================================START OF PRODUCE===================================\\
+
+
+####################################### 
+# The following function is the 'main cog' of the program.
+# You can change ra_width and dec_height to adjust the AREA
+# of the cutout. It means the resulting image will depict 
+# a LARGER area of the exposure, hence the night sky, but
+# you will lose on resolution and detail.
+#
+# Everything comes at a price! 
+#
+# Note: If the debugger script hits at this function, 
+# USE THE FORCE LUKE! Just kidding, it's cool; just give me
+# a poke at my e-mail.
+#######################################
+
+def produce(imname, g_image, r_image, i_image, g_name, r_name, i_name, ra, dec, objname) :
+	"""This is the cutout production module, to be integrated in a for loop in the main program.
+		
+		Constants that can be edited:
+
+		ra_width
+		dec_height 
+		
+		They're right at the beginning of the function!
+
+	"""
+
+	pos = get_bits(imname)[0]
+	gri = 'gri'
+	namedel = '_'
+	ext = '.fits'
+	cutdel = '_cutout'
+	pngext = '.png'
+#=============-----=========---------============--------====
+############################
+# CAUTION.
+# Wild code incoming.
+# It calls for the cutout function and sees if the code
+# can actually go ahead for the cutout.
+#
+#=====Cutout Image size   ***(in WCS FK5 degrees)***============
+	ra_width = 3./120.  #arcmins ORIGINALLY WAS 3./60 
+	dec_height = 3./120.  #arcmins
+	print 'Cutting out...'
+	cg = cutout(g_image,g_name+cutdel+ext,ra,dec,ra_width,dec_height)
+	cr = cutout(r_image,r_name+cutdel+ext,ra,dec,ra_width,dec_height)
+	ci = cutout(i_image,i_name+cutdel+ext,ra,dec,ra_width,dec_height)
+
+	if cg[1]*cr[1]*ci[1] == 0 :
+		print 'ATTENTION! Failed to cutout with the script.'
+		ds9cut(g_name+ext,ra,dec,ra_width,dec_height,g_name+cutdel+ext)
+		ds9cut(r_name+ext,ra,dec,ra_width,dec_height,r_name+cutdel+ext)
+		ds9cut(i_name+ext,ra,dec,ra_width,dec_height,i_name+cutdel+ext)
+	else:
+
+#############################
+# Parses the ENTIRE data array using pyfits. Yes. ALL OF IT.
+# Note: g_img, r_img, i_img are NOT VARIABLES. They're Python
+# objects. Arrays are Pythonic. I know numpy would be faster,
+# but only if I was going through it. 
+# You could just c/p this as Cython code (syntax changes apply) # if you'd like but it wouldn't make a difference since numpy's
+# C usage hardly makes any difference in this case.
+#
+# You CAN'T MAKE THIS RUN FASTER IN STANDARD PYTHON. 
+# You can however use Cython at your convenience, this code
+# IS portable as it has been written with C methodology.
+# Syntax changes apply. 
+# 
+# You can also use Python's multiprocessing, to sidestep the 
+# nasty global intepreter lock. This code however IS NOT 
+# directly compatible as of yet. 
+#############################
+
+		g_img = pyf.getdata(g_name+cutdel+ext)
+		r_img = pyf.getdata(r_name+cutdel+ext)
+		i_img = pyf.getdata(i_name+cutdel+ext)
+		print pos+namedel+objname+' now processing.'
+
+		rg0 = r_img.shape[0] == g_img.shape[0] 
+		gi0 = i_img.shape[0] == g_img.shape[0] 
+		gri0 = gi0*rg0
+		
+############################################
+# Use these only at times of urgent need.
+# Probably illegile if you don't know about the array shape 
+# problem. See page 3 of my notes.
+############################################	
+	
+		#print g_img.shape, r_img.shape, i_img.shape #IN-CODE DEBUG
+
+		#print 'Shape[0] :', rg0, gri0
+
+
+		rg1 = r_img.shape[1] == g_img.shape[1] 
+		gi1 = i_img.shape[1] == g_img.shape[1] 
+		gri1 = gi1*rg1
+		print 'Shape[1] :', rg1, gi1
+
+		print gri0, gri1
+		
+		if gri0*gri1 == 0 :
+			
+			print 'The cutout is messy. Attempting to fix it...'
+			print ds9comp(g_name+cutdel+ext,r_name+cutdel+ext,i_name+cutdel+ext,pos+namedel+objname)
+			
+			a = 'Image '+pos+' done!'
+
+	
+        		#return a
+
+
+
+			
+		else :
+
+			img = np.zeros((g_img.shape[0], r_img.shape[1], 3), dtype=float)
+			img[:,:,2] = img_scale.log(g_img, 1, scale_max= 10000)
+			img[:,:,1] = img_scale.log(r_img, 1, scale_max= 10000)
+			img[:,:,0] = img_scale.log(i_img, 1, scale_max= 10000)
+			pl.clf()
+			img = np.flipud(img)
+			pl.imshow(img, aspect='equal')
+			pl.axis('off')
+			
+
+			a = 'Image '+pos+' done!'
+
+
+        		#return a
+	
+
+
+
+
+#=================================================+END OF PRODUCE========================\\
+
+
+
+#################################
+# evaluates the tile's limits to see whether the code
+# can go through with the cutout.
+# Good stuff!
+#################################
+
+def evaluate(filename, ra, dec) :
+	print ra
+	print dec
+	ra_center = get_center(filename)[0]
+	dec_center = get_center(filename)[1]
+	ra_half = halves()[0]
+	dec_half = halves()[1]
+
+	ra_max = ra_center+ra_half
+	ra_min = ra_center-ra_half
+
+	dec_max = dec_center + dec_half
+	dec_min = dec_center - dec_half
+
+	if_ra = (ra > ra_min)*(ra < ra_max)
+	if_dec = (dec > dec_min)*(dec < dec_max)
+	switch = if_ra*if_dec
+
+	return switch
+
+
+#==============================================END OF EVALUATION===========================\\
+#==============================================START OF GETFROMFILENAME====================\\
+
+##############################
+# For more information please read the function description.
+# This function is ONLY COMPATIBLE WITH DES FILES.
+#
+###############################
+
+def get_center(filename) :
+
+	"""This function gets the filename and extracts the center, run number and band. Very, VERY useful.
+	Inputs: filename. A long string in the form of
+	
+	YYYYMMDD000XX_DESHHMM-DDMM_band.fits, where:
+YYYY the year, e.g. 2013
+MM the month, e.g. 03 for March
+DD the day, e.g. 09
+XX the number of times the particular tile was reprocessed. XX can be zero.
+HHHMM the centroid's Right ascension in hours-minutes	
+DDMM the centroid's declination in degrees-minutes
+
+	"""
+
+	bits = str.split(filename,'_')
+	coords = str.lstrip(bits[0],'DES')
+
+############# String manipulation. Careful with edits!
+
+	for a in coords :
+		if a == '-' :
+			ra = str.split(coords,'-')[0]
+			dec = str.split(coords,'-')[1]
+			sign = -1
+		elif a == '+' :
+			ra = str.split(coords,'+')[0]
+			dec = str.split(coords,'+')[1]
+			sign = +1
+
+	rabits = re.findall('..',ra)
+	decbits = re.findall('..',dec)
+	delim = ':'
+	rahms = rabits[0]+delim+rabits[1]
+	decdms = decbits[0]+delim+decbits[1]
+#=====================RAHMS and DEC HMS are the file's centre===========\\
+
+#convert hm and dm to decimals
+
+	ra_decimal = round(hms2decimal(rahms,delim),5)
+	dec_decimal = round(dms2decimal(decdms,delim),5)
+
+	return [ra_decimal, sign*dec_decimal, ]
+
+
+def get_bits(filename) :
+
+	pos = str.split(filename,'_')[0]
+	band = str.split(str.split(filename,'_')[1],'.')[0]
+	return [pos, band, ]
+
+
+#==================================================================END OF GETFROMFILENAME=========================
+
+
+################################
+# This is the solution to the uneven shape problem. 
+# It calls Harvard's SAOImage DS9 from your native /etc/ Ubuntu
+# path and uses it to cutout an image. 
+#
+# Yes it takes longer, than the production script before.
+# But it does the job. Better than no job.
+#
+# 
+###############################
+
+#===================================DS9 CUT======================\\\
+
+def ds9comp(g_img,r_img,i_img,outname):
+	print 'DS9 RGB composition initiated...'
+
+	if os.path.exists(outname) :
+		os.remove(outname)
+	
+	delim = '_'
+	comm = 'ds9 -rgb '
+	red = ' -red '
+	green = ' -green '
+	blue = ' -blue '
+	lz = ' -log -zmax  '
+	zoomtofit = ' -zoom to fit '
+	exit = ' -exit'
+	cb = ' -colorbar no '
+	width = '-width 512 '
+	height = '-height 512 '
+	comm_save = ' -saveimage jpg '+outname+'.jpg'
+	print comm+red+i_img+lz+green+r_img+lz+blue+g_img+cb+lz+width+height+zoomtofit+comm_save+exit	
+	os.system(comm+red+i_img+lz+green+r_img+lz+blue+g_img+cb+lz+width+height+zoomtofit+comm_save+exit)
+        
+	return 'DS9 image composition completed.'
+
+#===================END DS9 COMPOSITION // START DS9 CUTOUT==============\
+
+def ds9cut(band_name,ra,dec,ra_m,dec_m,outname):
+	print 'Attempting DS9 image cutout...'
+
+	if os.path.exists(outname) :
+		os.remove(outname)
+	exit = ' -exit'
+	delim = '_'
+	comm = 'ds9 '
+	crop = '-crop '+str(ra)+' '+str(dec)+' '+str(ra_m)+' '+str(dec_m)+' arcmin '
+	comm_save = ' -save fits '+outname
+	os.system(comm+crop+comm_save+exit)
+        
+	
+
+
+#==============================END DS9 CUT=====================\
+
+
+#====================================
+#FOR IMAGE SIZE LOOK AT THE PRODUCE FUNCTION
+#====================================
+
+###########################################
+# Automatically scans the directory where the script is 
+# located for .fits files, creates a file which
+# is deleted when the program ends.
+###########################################
+
+
+def fitslist():
+	f = open('fitslist.dat', 'w+')
+	delim = ' '
+	down = '\n'
+
+	
+
+	for files in glob.glob("*.fits"):
+		identifier = re.search('DES',files)
+		ident_cut = re.search('cut',files)
+		if identifier and (not ident_cut) :
+			s = str(files)+down
+		    	f.write(s)
+#===============================================================~~~~~!
+############################################
+# MAIN SCRIPT STARTS HERE!
+# 
+# Using information from .csv, it initiates the for loops that
+# bring the rest of the script to life!
+#  
+# You have to be absolutely sure that the corresponding files
+# are there for the code to see them, otherwise there will be
+# images missing.
+#############################################
+
+#===========================================================++++CSV FILE PARAMETERS ============================================
+
+linedel = ','
+obj, ra, dec = np.loadtxt('csvPicParams.csv',dtype=str, delimiter=linedel, unpack=True, skiprows = 1, usecols = (0,1,2))
+
+#========================================================++CSV FILE==============================================================
+
+i = 0
+
+Information=[]
+
+for ij in range(len(obj)) :
+	
+	print 'OBJ = ',obj[ij], 'RA = ',ra[ij],' degrees // dec = ',dec[ij],' degrees'
+	savedec=str(dec[ij])
+	savera=str(ra[ij])
+	saveobj=str(obj[ij])
+	
+	fitslist = np.loadtxt('fitslist.dat',dtype=str)
+
+	for imname in fitslist: 
+			
+		ss = evaluate(imname,float(ra[ij]),float(dec[ij]))
+		if ss==1:
+			found = 1		
+		#	print 'Match found: ', imname
+
+			if get_bits(imname)[1] == 'g' :
+				g_image = imname
+				print g_image
+				g_name = str.split(g_image,'.')[0]
+				print g_name
+				i = i + 1
+			elif get_bits(imname)[1] == 'r' :
+				r_image = imname
+				print r_image
+				r_name = str.split(r_image,'.')[0]
+				print r_name
+				i = i +1
+			elif get_bits(imname)[1] == 'i'	:
+				i_image = imname
+				print i_image
+				i_name = str.split(i_image,'.')[0]
+				print i_name
+				i = i +1
+			if i == 3:# or i ==6 or i==9:
+				print produce(imname, g_image, r_image, i_image, g_name, r_name, i_name, float(ra[ij]), float(dec[ij]), obj[ij])
+				Information.append([saveobj,savera,savedec])
+				i = 0
+				
+			'''			
+			InfoOutFile='Information'
+			if os.path.exists(InfoOutFile+'.txt'):
+                                ex=np.arange(1,250,1)
+				for lol in ex:
+                                	if os.path.exists(InfoOutFile+str(lol)):
+                                       		continue
+                               		else:
+                                        	outfile=InfoOutFile+str(lol)
+                                       		break
+			
+			with open(InfoOutFile+'.txt','w') as text_file:
+				text_file.write(saveobj+' ')
+				text_file.write(savera+' ')
+				text_file.write(savedec)
+			'''
+		else :
+			found = 0
+		#	print 'Match not found', imname
+
+
+
